@@ -100,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
 
+        <!-- Segmentation Form -->
         <form method="POST" class="mb-4">
             <div class="row justify-content-center">
                 <div class="col-md-8">
@@ -121,6 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <button type="submit" class="btn btn-primary">Show Results</button>
                             </div>
 
+
                             <div class="border-top pt-3">
                                 <label class="form-label small fw-bold text-muted d-block">Filter Columns for Export:</label>
                                 <div class="mb-3">
@@ -141,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <label class="form-check-label small">Region</label>
                                     </div>
                                 </div>
-                                
+                               
                                 <div class="btn-group w-100" role="group">
                                     <button type="submit" name="export" value="csv" class="btn btn-sm btn-outline-secondary">Export CSV</button>
                                     <button type="submit" name="export" value="pdf" class="btn btn-sm btn-outline-danger">Export PDF</button>
@@ -153,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
         </form>
-
+        
         <!-- Results Table -->
         <?php if (isset($results)): ?>
             <table class="table table-striped table-bordered">
