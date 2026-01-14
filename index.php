@@ -1,26 +1,11 @@
 <?php
+$starttime = microtime(true);
+
 session_start();
 if (!isset($_SESSION['logged_in'])) {
     header('Location: login.php');
     exit;
 }
-// NEWWWWWWWWW
-$timeout_duration = 1800; // 30 minutes in seconds
-
-if (isset($_SESSION['last_activity'])) {
-    $elapsed_time = time() - $_SESSION['last_activity'];
-
-    if ($elapsed_time > $timeout_duration) {
-        // Session has expired
-        session_unset();
-        session_destroy();
-        header("Location: login.php?reason=timeout");
-        exit();
-    }
-}
-
-// Update last activity time for the next request
-$_SESSION['last_activity'] = time();
 
 require_once 'db.php';
 
@@ -45,35 +30,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sql = "SELECT CASE WHEN income < 30000 THEN 'Low Income (<30k)' WHEN income BETWEEN 30000 AND 70000 THEN 'Middle Income (30k-70k)' ELSE 'High Income (>70k)' END AS income_bracket, COUNT(*) AS total_customers, ROUND(AVG(purchase_amount), 2) AS avg_purchase_amount FROM customers GROUP BY income_bracket ORDER BY income_bracket";
             break;
 
-        // --- START OF NEW CLV TIERS CASE ---
-        case 'clv_tiers':
-            // Business Rule: CLV = (Avg Purchase Amount × Purchase Frequency × Customer Lifespan)
-            // SQL Implementation: (total_spent_lifetime / total_transactions) * total_transactions * (Months Active)
-            // Simplified: total_spent_lifetime * (Months Active)
-            $sql = "SELECT 
-                CASE 
-                    WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) >= 50000 THEN 'Platinum'
-                    WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) BETWEEN 20000 AND 49999 THEN 'Gold'
-                    WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) BETWEEN 5000 AND 19999 THEN 'Silver'
-                    ELSE 'Bronze'
-                END AS clv_tier,
-                COUNT(*) AS total_customers,
-                ROUND(AVG(total_spent_lifetime), 2) AS avg_lifetime_value,
-                ROUND(AVG(total_transactions), 1) AS avg_purchase_frequency
-            FROM customers 
-            GROUP BY clv_tier 
-            ORDER BY FIELD(clv_tier, 'Platinum', 'Gold', 'Silver', 'Bronze')";
-            break;
-        // --- END OF NEW CLV TIERS CASE ---
-
         case 'cluster':
             $sql = "SELECT sr.cluster_label, COUNT(*) AS total_customers, ROUND(AVG(c.income), 2) AS avg_income, ROUND(AVG(c.purchase_amount), 2) AS avg_purchase_amount, MIN(c.age) AS min_age, MAX(c.age) AS max_age FROM segmentation_results sr JOIN customers c ON sr.customer_id = c.customer_id GROUP BY sr.cluster_label ORDER BY sr.cluster_label";
 
+            // Fetch cluster metadata for enhanced visualizations
             try {
                 $metadata_sql = "SELECT * FROM cluster_metadata ORDER BY cluster_id";
                 $metadata_stmt = $pdo->query($metadata_sql);
                 $cluster_metadata = $metadata_stmt->fetchAll(PDO::FETCH_ASSOC);
 
+                // Fetch detailed customer data for scatter plots
                 $detail_sql = "SELECT c.customer_id, c.age, c.income, c.purchase_amount, sr.cluster_label
                                FROM customers c
                                JOIN segmentation_results sr ON c.customer_id = sr.customer_id
@@ -81,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $detail_stmt = $pdo->query($detail_sql);
                 $cluster_details = $detail_stmt->fetchAll(PDO::FETCH_ASSOC);
             } catch (PDOException $e) {
+                // If cluster_metadata table doesn't exist yet, set to empty arrays
                 $cluster_metadata = [];
                 $cluster_details = [];
             }
@@ -91,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
 
         default:
-            $sql = "SELECT * FROM customers LIMIT 10"; 
+            $sql = "SELECT * FROM customers LIMIT 10"; // Default query
     }
 
     try {
@@ -101,6 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die("Query execution failed: " . $e->getMessage());
     }
 }
+$endtime = microtime(true);
+$executiontime = $endtime - $starttime;
+echo "<!-- Page execution time: {$executionTime} seconds -->";
 ?>
 
 <!DOCTYPE html>
@@ -135,7 +105,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
 
-        <!-- Segmentation Form -->
         <form method="POST" class="mb-4">
             <div class="row justify-content-center">
                 <div class="col-md-8">
@@ -157,7 +126,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <button type="submit" class="btn btn-primary">Show Results</button>
                             </div>
 
-
                             <div class="border-top pt-3">
                                 <label class="form-label small fw-bold text-muted d-block">Filter Columns for Export:</label>
                                 <div class="mb-3">
@@ -178,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         <label class="form-check-label small">Region</label>
                                     </div>
                                 </div>
-                               
+                                
                                 <div class="btn-group w-100" role="group">
                                     <button type="submit" name="export" value="csv" class="btn btn-sm btn-outline-secondary">Export CSV</button>
                                     <button type="submit" name="export" value="pdf" class="btn btn-sm btn-outline-danger">Export PDF</button>
@@ -190,7 +158,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
         </form>
-
 
         <!-- Results Table -->
         <?php if (isset($results)): ?>
