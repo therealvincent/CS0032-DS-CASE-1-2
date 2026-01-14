@@ -1,0 +1,28 @@
+openapi: 3.0.0
+info:
+  title: Customer Segmentation API
+  version: 1.0.0
+paths:
+  /api/segments/clv_tiers:
+    get:
+      summary: Get CLV Distribution
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    tier: { type: string }
+                    total_customers: { type: integer }
+                    avg_revenue: { type: number }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer

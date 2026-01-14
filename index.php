@@ -153,7 +153,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <option value="income_bracket">By Income Bracket</option>
                                     <option value="cluster">By Cluster</option>
                                     <option value="purchase_tier">By Purchase Tier</option>
-                                </select>
+                                    <option value="clv_tiers">By CLV Tiers (Advanced)</option>
+                                </select> 
                                 <button type="submit" class="btn btn-primary">Show Results</button>
                             </div>
 
@@ -263,50 +264,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <li>Customer base distributed across ${labels.length} age groups</li>
                             <li>Dominant age group: ${labels[data.indexOf(Math.max(...data))]} with ${Math.max(...data).toLocaleString()} customers (${(Math.max(...data)/totalCustomers*100).toFixed(1)}%)</li>
                             ${results.length > 0 && results[0].avg_income ? `<li>Income peaks in the ${results.reduce((max, r) => parseFloat(r.avg_income) > parseFloat(max.avg_income) ? r : max).age_group || results[0].age_group} age group at $${Math.max(...results.map(r => parseFloat(r.avg_income))).toLocaleString()}</li>` : ''}
-                            ${results.length > 0 && results[0].avg_purchase_amount ? `<li>Highest spending age group: ${results.reduce((max, r) => parseFloat(r.avg_purchase_amount) > parseFloat(max.avg_purchase_amount) ? r : max).age_group || results[0].age_group}</li>` : ''}
                         </ul>`;
                         break;
+
+                    // --- START OF NEW CLV INSIGHTS ---
+                    case 'clv_tiers':
+                        const platCount = results.find(r => r.clv_tier === 'Platinum')?.total_customers || 0;
+                        const goldCount = results.find(r => r.clv_tier === 'Gold')?.total_customers || 0;
+                        
+                        insights = `<ul>
+                            <li><strong>Loyalty Distribution:</strong> Analyzed based on Average Purchase × Frequency × Lifespan.</li>
+                            <li><strong>High Value Assets:</strong> ${platCount.toLocaleString()} customers are in the <strong>Platinum</strong> tier, representing your highest retention priority.</li>
+                            <li><strong>Revenue Stability:</strong> Platinum and Gold tiers together represent ${(((platCount + goldCount) / totalCustomers) * 100).toFixed(1)}% of your base.</li>
+                            <li><strong>Marketing Strategy:</strong> Focus on loyalty rewards for Platinum/Gold and re-engagement scripts for Bronze/Silver segments.</li>
+                        </ul>`;
+                        break;
+                    // --- END OF NEW CLV INSIGHTS ---
 
                     case 'income_bracket':
                         insights = `<ul>
                             <li>Customers segmented into ${labels.length} income brackets</li>
                             <li>Largest income segment: ${labels[data.indexOf(Math.max(...data))]} (${(Math.max(...data)/totalCustomers*100).toFixed(1)}% of customers)</li>
-                            ${results.length > 0 && results[0].avg_purchase_amount ? `<li>Purchase behavior: ${results.reduce((max, r) => parseFloat(r.avg_purchase_amount) > parseFloat(max.avg_purchase_amount) ? r : max).income_bracket || results[0].income_bracket} shows highest average spending at $${Math.max(...results.map(r => parseFloat(r.avg_purchase_amount))).toLocaleString()}</li>` : ''}
-                            <li>Income-purchase correlation can guide targeted marketing strategies</li>
+                            ${results.length > 0 && results[0].avg_purchase_amount ? `<li>Highest average spending: $${Math.max(...results.map(r => parseFloat(r.avg_purchase_amount))).toLocaleString()}</li>` : ''}
                         </ul>`;
                         break;
 
                     case 'cluster':
-                        // Check if we have enhanced metadata
                         if (typeof clusterMetadata !== 'undefined' && clusterMetadata.length > 0) {
-                            const largestCluster = clusterMetadata.reduce((max, c) =>
-                                c.customer_count > max.customer_count ? c : max
-                            );
+                            const largestCluster = clusterMetadata.reduce((max, c) => c.customer_count > max.customer_count ? c : max);
                             insights = `<ul>
-                                <li>Advanced k-means clustering identified <strong>${clusterMetadata.length} distinct customer segments</strong></li>
-                                <li>Largest segment: <strong>${largestCluster.cluster_name}</strong> with ${parseInt(largestCluster.customer_count).toLocaleString()} customers (${((largestCluster.customer_count/totalCustomers)*100).toFixed(1)}%)</li>
-                                <li>Clusters range from "${clusterMetadata[0].cluster_name}" to "${clusterMetadata[clusterMetadata.length-1].cluster_name}"</li>
-                                <li>Each cluster has unique demographics, income levels, and purchasing behaviors - view detailed analysis below</li>
-                                <li><strong>Actionable insights:</strong> Scroll down to see cluster characteristics, statistics, visualizations, and marketing recommendations</li>
+                                <li>Advanced k-means clustering identified <strong>${clusterMetadata.length} segments</strong></li>
+                                <li>Largest segment: <strong>${largestCluster.cluster_name}</strong> (${((largestCluster.customer_count/totalCustomers)*100).toFixed(1)}%)</li>
+                                <li><strong>Actionable insights:</strong> View the detailed cluster charts below for marketing recommendations.</li>
                             </ul>`;
                         } else {
-                            // Fallback to original insights if metadata not available
-                            insights = `<ul>
-                                <li>Machine learning clustering identified ${labels.length} distinct customer segments</li>
-                                <li>Largest cluster: ${labels[data.indexOf(Math.max(...data))]} with ${Math.max(...data).toLocaleString()} customers</li>
-                                ${results.length > 0 && results[0].min_age && results[0].max_age ? `<li>Age ranges vary across clusters, providing demographic differentiation</li>` : ''}
-                                <li>Each cluster represents a unique customer profile for targeted campaigns</li>
-                                <li><em>Note: Run the Python clustering script to generate enhanced cluster analysis with detailed explanations</em></li>
-                            </ul>`;
+                            insights = `<ul><li>Machine learning clustering identified ${labels.length} segments.</li></ul>`;
                         }
                         break;
 
                     case 'purchase_tier':
                         insights = `<ul>
                             <li>Customers categorized into ${labels.length} spending tiers</li>
-                            <li>Largest tier: ${labels[data.indexOf(Math.max(...data))]} (${(Math.max(...data)/totalCustomers*100).toFixed(1)}% of customers)</li>
-                            ${results.length > 0 && results[0].avg_income ? `<li>High spenders correlate with income levels averaging $${Math.max(...results.map(r => parseFloat(r.avg_income))).toLocaleString()}</li>` : ''}
-                            <li>Understanding spending tiers enables personalized product recommendations</li>
+                            <li>Largest tier: ${labels[data.indexOf(Math.max(...data))]} (${(Math.max(...data)/totalCustomers*100).toFixed(1)}%)</li>
+                            <li>Understanding spending tiers enables personalized product recommendations.</li>
                         </ul>`;
                         break;
                 }

@@ -1,41 +1,52 @@
 <?php
+// C:\xampp\htdocs\csapp\api.php
 header('Content-Type: application/json');
-require_once 'db.php';
+require_once 'db.php'; // This provides $pdo
 
-// Security: Simple Token Check
-$api_key = "my_secret_key_123";
-$headers = getallheaders();
+$type = $_GET['type'] ?? '';
 
-if (!isset($headers['Authorization']) || $headers['Authorization'] !== "Bearer " . $api_key) {
-    http_response_code(401);
-    echo json_encode(["error" => "Unauthorized: Invalid API Key"]);
+if ($type === 'segments/cluster') {
+    try {
+        // Updated to use PDO syntax
+        $query = "SELECT 
+                    sr.cluster_id, 
+                    COUNT(c.customer_id) as total_customers,
+                    AVG(c.income) as avg_income,
+                    AVG(c.total_spent_lifetime) as avg_spend
+                  FROM segmentation_results sr
+                  JOIN customers c ON sr.customer_id = c.customer_id
+                  GROUP BY sr.cluster_id";
+
+        $stmt = $pdo->query($query);
+        $response = [];
+
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $avg_income = (float)$row['avg_income'];
+            $avg_spend = (float)$row['avg_spend'];
+
+            // Logic to assign descriptive labels
+            $label = "Standard Customer";
+            if ($avg_spend > 30000) $label = "High-Spenders";
+            elseif ($avg_income > 70000 && $avg_spend < 10000) $label = "Frugal High-Earners";
+            elseif ($avg_spend < 5000) $label = "Budget-Conscious";
+
+            $response[] = [
+                "cluster_id" => (int)$row['cluster_id'],
+                "label" => $label,
+                "total_customer_count" => (int)$row['total_customers'],
+                "metrics" => [
+                    "avg_income" => round($avg_income, 2),
+                    "avg_purchase_amount" => round($avg_spend, 2)
+                ]
+            ];
+        }
+
+        echo json_encode($response, JSON_PRETTY_PRINT);
+    } catch (PDOException $e) {
+        echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+    }
     exit;
 }
 
-// Endpoint Logic
-$type = $_GET['type'] ?? 'summary';
-
-switch ($type) {
-    case 'summary':
-        echo json_encode(["available_types" => ["gender", "region", "clv_tiers", "cluster"]]);
-        break;
-
-    case 'clv_tiers':
-        $sql = "SELECT 
-                    CASE 
-                        WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) >= 50000 THEN 'Platinum'
-                        WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) >= 20000 THEN 'Gold'
-                        WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) >= 5000 THEN 'Silver'
-                        ELSE 'Bronze'
-                    END AS tier,
-                    COUNT(*) AS count 
-                FROM customers GROUP BY tier";
-        $stmt = $pdo->query($sql);
-        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
-        break;
-
-    default:
-        http_response_code(404);
-        echo json_encode(["error" => "Segment type not found"]);
-}
+echo json_encode(["status" => "error", "message" => "Invalid endpoint"]);
 ?>
