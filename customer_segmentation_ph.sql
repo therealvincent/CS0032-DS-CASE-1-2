@@ -20163,7 +20163,9 @@ ALTER TABLE `segmentation_results`
 --
 -- Constraints for dumped tables
 --
-
+ALTER TABLE customers
+PARTITION BY HASH(customer_id)
+PARTITIONS 8;
 --
 -- Constraints for table `segmentation_results`
 --
@@ -20174,3 +20176,13 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+ALTER TABLE customers ADD INDEX idx_gender (gender);
+ALTER TABLE customers ADD INDEX idx_region (region);
+ALTER TABLE customers ADD INDEX idx_age (age);
+ALTER TABLE customers ADD INDEX idx_income (income);
+ALTER TABLE customers ADD INDEX idx_gender_region (gender, region);
+
+ALTER TABLE segmentation_results ADD INDEX idx_cluster_label (cluster_label);
+ALTER TABLE segmentation_results ADD INDEX idx_customer_id (customer_id);
+
