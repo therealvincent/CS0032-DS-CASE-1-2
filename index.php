@@ -1,11 +1,26 @@
 <?php
-$starttime = microtime(true);
-
 session_start();
 if (!isset($_SESSION['logged_in'])) {
     header('Location: login.php');
     exit;
 }
+// NEWWWWWWWWW
+$timeout_duration = 1800; // 30 minutes in seconds
+
+if (isset($_SESSION['last_activity'])) {
+    $elapsed_time = time() - $_SESSION['last_activity'];
+
+    if ($elapsed_time > $timeout_duration) {
+        // Session has expired
+        session_unset();
+        session_destroy();
+        header("Location: login.php?reason=timeout");
+        exit();
+    }
+}
+
+// Update last activity time for the next request
+$_SESSION['last_activity'] = time();
 
 require_once 'db.php';
 
@@ -30,16 +45,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sql = "SELECT CASE WHEN income < 30000 THEN 'Low Income (<30k)' WHEN income BETWEEN 30000 AND 70000 THEN 'Middle Income (30k-70k)' ELSE 'High Income (>70k)' END AS income_bracket, COUNT(*) AS total_customers, ROUND(AVG(purchase_amount), 2) AS avg_purchase_amount FROM customers GROUP BY income_bracket ORDER BY income_bracket";
             break;
 
+        // --- START OF NEW CLV TIERS CASE ---
+        case 'clv_tiers':
+            // Business Rule: CLV = (Avg Purchase Amount × Purchase Frequency × Customer Lifespan)
+            // SQL Implementation: (total_spent_lifetime / total_transactions) * total_transactions * (Months Active)
+            // Simplified: total_spent_lifetime * (Months Active)
+            $sql = "SELECT 
+                CASE 
+                    WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) >= 50000 THEN 'Platinum'
+                    WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) BETWEEN 20000 AND 49999 THEN 'Gold'
+                    WHEN (total_spent_lifetime * (DATEDIFF(last_purchase_date, registration_date) / 30 + 1)) BETWEEN 5000 AND 19999 THEN 'Silver'
+                    ELSE 'Bronze'
+                END AS clv_tier,
+                COUNT(*) AS total_customers,
+                ROUND(AVG(total_spent_lifetime), 2) AS avg_lifetime_value,
+                ROUND(AVG(total_transactions), 1) AS avg_purchase_frequency
+            FROM customers 
+            GROUP BY clv_tier 
+            ORDER BY FIELD(clv_tier, 'Platinum', 'Gold', 'Silver', 'Bronze')";
+            break;
+        // --- END OF NEW CLV TIERS CASE ---
+
         case 'cluster':
             $sql = "SELECT sr.cluster_label, COUNT(*) AS total_customers, ROUND(AVG(c.income), 2) AS avg_income, ROUND(AVG(c.purchase_amount), 2) AS avg_purchase_amount, MIN(c.age) AS min_age, MAX(c.age) AS max_age FROM segmentation_results sr JOIN customers c ON sr.customer_id = c.customer_id GROUP BY sr.cluster_label ORDER BY sr.cluster_label";
 
-            // Fetch cluster metadata for enhanced visualizations
             try {
                 $metadata_sql = "SELECT * FROM cluster_metadata ORDER BY cluster_id";
                 $metadata_stmt = $pdo->query($metadata_sql);
                 $cluster_metadata = $metadata_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-                // Fetch detailed customer data for scatter plots
                 $detail_sql = "SELECT c.customer_id, c.age, c.income, c.purchase_amount, sr.cluster_label
                                FROM customers c
                                JOIN segmentation_results sr ON c.customer_id = sr.customer_id
@@ -47,7 +81,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $detail_stmt = $pdo->query($detail_sql);
                 $cluster_details = $detail_stmt->fetchAll(PDO::FETCH_ASSOC);
             } catch (PDOException $e) {
-                // If cluster_metadata table doesn't exist yet, set to empty arrays
                 $cluster_metadata = [];
                 $cluster_details = [];
             }
@@ -58,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
 
         default:
-            $sql = "SELECT * FROM customers LIMIT 10"; // Default query
+            $sql = "SELECT * FROM customers LIMIT 10"; 
     }
 
     try {
@@ -68,9 +101,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         die("Query execution failed: " . $e->getMessage());
     }
 }
-$endtime = microtime(true);
-$executiontime = $endtime - $starttime;
-echo "<!-- Page execution time: {$executionTime} seconds -->";
 ?>
 
 <!DOCTYPE html>
@@ -105,6 +135,7 @@ echo "<!-- Page execution time: {$executionTime} seconds -->";
             </div>
         </div>
 
+        <!-- Segmentation Form -->
         <form method="POST" class="mb-4">
             <div class="row justify-content-center">
                 <div class="col-md-8">
@@ -122,10 +153,10 @@ echo "<!-- Page execution time: {$executionTime} seconds -->";
                                     <option value="income_bracket">By Income Bracket</option>
                                     <option value="cluster">By Cluster</option>
                                     <option value="purchase_tier">By Purchase Tier</option>
-                                    <option value="clv_tiers">By CLV Tiers (Advanced)</option>
-                                </select> 
+                                </select>
                                 <button type="submit" class="btn btn-primary">Show Results</button>
                             </div>
+
 
                             <div class="border-top pt-3">
                                 <label class="form-label small fw-bold text-muted d-block">Filter Columns for Export:</label>
@@ -147,7 +178,7 @@ echo "<!-- Page execution time: {$executionTime} seconds -->";
                                         <label class="form-check-label small">Region</label>
                                     </div>
                                 </div>
-                                
+                               
                                 <div class="btn-group w-100" role="group">
                                     <button type="submit" name="export" value="csv" class="btn btn-sm btn-outline-secondary">Export CSV</button>
                                     <button type="submit" name="export" value="pdf" class="btn btn-sm btn-outline-danger">Export PDF</button>
@@ -159,6 +190,7 @@ echo "<!-- Page execution time: {$executionTime} seconds -->";
                 </div>
             </div>
         </form>
+
 
         <!-- Results Table -->
         <?php if (isset($results)): ?>
@@ -231,49 +263,50 @@ echo "<!-- Page execution time: {$executionTime} seconds -->";
                             <li>Customer base distributed across ${labels.length} age groups</li>
                             <li>Dominant age group: ${labels[data.indexOf(Math.max(...data))]} with ${Math.max(...data).toLocaleString()} customers (${(Math.max(...data)/totalCustomers*100).toFixed(1)}%)</li>
                             ${results.length > 0 && results[0].avg_income ? `<li>Income peaks in the ${results.reduce((max, r) => parseFloat(r.avg_income) > parseFloat(max.avg_income) ? r : max).age_group || results[0].age_group} age group at $${Math.max(...results.map(r => parseFloat(r.avg_income))).toLocaleString()}</li>` : ''}
+                            ${results.length > 0 && results[0].avg_purchase_amount ? `<li>Highest spending age group: ${results.reduce((max, r) => parseFloat(r.avg_purchase_amount) > parseFloat(max.avg_purchase_amount) ? r : max).age_group || results[0].age_group}</li>` : ''}
                         </ul>`;
                         break;
-
-                    // --- START OF NEW CLV INSIGHTS ---
-                    case 'clv_tiers':
-                        const platCount = results.find(r => r.clv_tier === 'Platinum')?.total_customers || 0;
-                        const goldCount = results.find(r => r.clv_tier === 'Gold')?.total_customers || 0;
-                        
-                        insights = `<ul>
-                            <li><strong>Loyalty Distribution:</strong> Analyzed based on Average Purchase × Frequency × Lifespan.</li>
-                            <li><strong>High Value Assets:</strong> ${platCount.toLocaleString()} customers are in the <strong>Platinum</strong> tier, representing your highest retention priority.</li>
-                            <li><strong>Revenue Stability:</strong> Platinum and Gold tiers together represent ${(((platCount + goldCount) / totalCustomers) * 100).toFixed(1)}% of your base.</li>
-                            <li><strong>Marketing Strategy:</strong> Focus on loyalty rewards for Platinum/Gold and re-engagement scripts for Bronze/Silver segments.</li>
-                        </ul>`;
-                        break;
-                    // --- END OF NEW CLV INSIGHTS ---
 
                     case 'income_bracket':
                         insights = `<ul>
                             <li>Customers segmented into ${labels.length} income brackets</li>
                             <li>Largest income segment: ${labels[data.indexOf(Math.max(...data))]} (${(Math.max(...data)/totalCustomers*100).toFixed(1)}% of customers)</li>
-                            ${results.length > 0 && results[0].avg_purchase_amount ? `<li>Highest average spending: $${Math.max(...results.map(r => parseFloat(r.avg_purchase_amount))).toLocaleString()}</li>` : ''}
+                            ${results.length > 0 && results[0].avg_purchase_amount ? `<li>Purchase behavior: ${results.reduce((max, r) => parseFloat(r.avg_purchase_amount) > parseFloat(max.avg_purchase_amount) ? r : max).income_bracket || results[0].income_bracket} shows highest average spending at $${Math.max(...results.map(r => parseFloat(r.avg_purchase_amount))).toLocaleString()}</li>` : ''}
+                            <li>Income-purchase correlation can guide targeted marketing strategies</li>
                         </ul>`;
                         break;
 
                     case 'cluster':
+                        // Check if we have enhanced metadata
                         if (typeof clusterMetadata !== 'undefined' && clusterMetadata.length > 0) {
-                            const largestCluster = clusterMetadata.reduce((max, c) => c.customer_count > max.customer_count ? c : max);
+                            const largestCluster = clusterMetadata.reduce((max, c) =>
+                                c.customer_count > max.customer_count ? c : max
+                            );
                             insights = `<ul>
-                                <li>Advanced k-means clustering identified <strong>${clusterMetadata.length} segments</strong></li>
-                                <li>Largest segment: <strong>${largestCluster.cluster_name}</strong> (${((largestCluster.customer_count/totalCustomers)*100).toFixed(1)}%)</li>
-                                <li><strong>Actionable insights:</strong> View the detailed cluster charts below for marketing recommendations.</li>
+                                <li>Advanced k-means clustering identified <strong>${clusterMetadata.length} distinct customer segments</strong></li>
+                                <li>Largest segment: <strong>${largestCluster.cluster_name}</strong> with ${parseInt(largestCluster.customer_count).toLocaleString()} customers (${((largestCluster.customer_count/totalCustomers)*100).toFixed(1)}%)</li>
+                                <li>Clusters range from "${clusterMetadata[0].cluster_name}" to "${clusterMetadata[clusterMetadata.length-1].cluster_name}"</li>
+                                <li>Each cluster has unique demographics, income levels, and purchasing behaviors - view detailed analysis below</li>
+                                <li><strong>Actionable insights:</strong> Scroll down to see cluster characteristics, statistics, visualizations, and marketing recommendations</li>
                             </ul>`;
                         } else {
-                            insights = `<ul><li>Machine learning clustering identified ${labels.length} segments.</li></ul>`;
+                            // Fallback to original insights if metadata not available
+                            insights = `<ul>
+                                <li>Machine learning clustering identified ${labels.length} distinct customer segments</li>
+                                <li>Largest cluster: ${labels[data.indexOf(Math.max(...data))]} with ${Math.max(...data).toLocaleString()} customers</li>
+                                ${results.length > 0 && results[0].min_age && results[0].max_age ? `<li>Age ranges vary across clusters, providing demographic differentiation</li>` : ''}
+                                <li>Each cluster represents a unique customer profile for targeted campaigns</li>
+                                <li><em>Note: Run the Python clustering script to generate enhanced cluster analysis with detailed explanations</em></li>
+                            </ul>`;
                         }
                         break;
 
                     case 'purchase_tier':
                         insights = `<ul>
                             <li>Customers categorized into ${labels.length} spending tiers</li>
-                            <li>Largest tier: ${labels[data.indexOf(Math.max(...data))]} (${(Math.max(...data)/totalCustomers*100).toFixed(1)}%)</li>
-                            <li>Understanding spending tiers enables personalized product recommendations.</li>
+                            <li>Largest tier: ${labels[data.indexOf(Math.max(...data))]} (${(Math.max(...data)/totalCustomers*100).toFixed(1)}% of customers)</li>
+                            ${results.length > 0 && results[0].avg_income ? `<li>High spenders correlate with income levels averaging $${Math.max(...results.map(r => parseFloat(r.avg_income))).toLocaleString()}</li>` : ''}
+                            <li>Understanding spending tiers enables personalized product recommendations</li>
                         </ul>`;
                         break;
                 }
